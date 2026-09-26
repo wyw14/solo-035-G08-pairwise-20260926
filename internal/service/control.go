@@ -27,7 +27,21 @@ type ControlResult struct {
 	Value  any    `json:"value,omitempty"`
 }
 
+// ExecuteControl handles a direct director request. Critical actions that stop
+// programs or move traffic onto backup paths are rejected here; they must go
+// through the two-person approval flow (ProposeControl / DecideControl).
 func (runtime *Runtime) ExecuteControl(ctx context.Context, request ControlRequest) (ControlResult, error) {
+	if IsRestrictedAction(request.Action) {
+		return ControlResult{Action: request.Action, Status: "approval-required"},
+			fmt.Errorf("%w: action %q must be proposed and confirmed via /api/approvals", ErrApprovalRequired, request.Action)
+	}
+	return runtime.runControl(ctx, request)
+}
+
+// runControl executes the action without an approval gate. The approval flow
+// calls this after both operators have confirmed and generations have been
+// fenced.
+func (runtime *Runtime) runControl(ctx context.Context, request ControlRequest) (ControlResult, error) {
 	result := ControlResult{Action: request.Action, Status: "accepted"}
 	eventID := model.EventID(request.EventID)
 	sourceID := model.SourceID(request.SourceID)

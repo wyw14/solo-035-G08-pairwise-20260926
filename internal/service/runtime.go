@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/wyw14/solo-035/internal/approval"
 	"github.com/wyw14/solo-035/internal/audio"
 	"github.com/wyw14/solo-035/internal/backup"
 	"github.com/wyw14/solo-035/internal/caption"
 	"github.com/wyw14/solo-035/internal/encoder"
 	"github.com/wyw14/solo-035/internal/event"
 	"github.com/wyw14/solo-035/internal/journal"
+	"github.com/wyw14/solo-035/internal/model"
 	"github.com/wyw14/solo-035/internal/mux"
 	"github.com/wyw14/solo-035/internal/playout"
 	"github.com/wyw14/solo-035/internal/quality"
@@ -49,6 +51,7 @@ type Runtime struct {
 	PlayoutRecovery *playout.Recovery
 	BackupState     *backup.State
 	Backup          *backup.Coordinator
+	Approvals       *approval.Registry
 }
 
 func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) {
@@ -100,5 +103,8 @@ func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) 
 	if runtime.Backup == nil {
 		return nil, fmt.Errorf("backup coordinator was not constructed")
 	}
+	runtime.Approvals = approval.NewRegistry(clock, func() []model.LiveEvent {
+		return runtime.Events.List()
+	})
 	return runtime, nil
 }

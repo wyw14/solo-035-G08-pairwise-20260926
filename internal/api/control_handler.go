@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/wyw14/solo-035/internal/service"
@@ -18,7 +19,13 @@ func (server *Server) control(writer http.ResponseWriter, request *http.Request)
 	}
 	result, err := server.runtime.ExecuteControl(request.Context(), input)
 	if err != nil {
-		writeError(writer, http.StatusConflict, err.Error())
+		status := http.StatusConflict
+		if errors.Is(err, service.ErrApprovalRequired) {
+			// Critical director actions must be proposed and confirmed by a
+			// second operator before they can run.
+			status = http.StatusForbidden
+		}
+		writeJSON(writer, status, map[string]any{"error": err.Error(), "result": result})
 		return
 	}
 	writeJSON(writer, http.StatusOK, result)

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OnAirMux 双人审批</title>
+<link rel="stylesheet" href="/app.css">
+<style>
+.formbar{background:#fff;border:1px solid #d5ddda;border-radius:4px;padding:18px;margin-bottom:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;align-items:end}
+.formbar label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#52605a}
+.formbar input,.formbar select{padding:9px 10px;border:1px solid #c2ccc8;border-radius:4px;font-size:14px;background:#fff;color:#17201d}
+button{cursor:pointer;border:0;border-radius:4px;padding:10px 16px;font-size:13px;font-weight:600}
+button.primary{background:#16835f;color:#fff}
+button.danger{background:#c3472e;color:#fff}
+button.ghost{background:#e7ecea;color:#26312c}
+button:disabled{opacity:.45;cursor:not-allowed}
+.badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:999px;text-transform:uppercase}
+.badge.pending,.badge.approved{background:#e7f1ec;color:#16835f}
+.badge.executed{background:#16835f;color:#fff}
+.badge.rejected,.badge.failed,.badge.expired,.badge.invalidated,.badge.superseded{background:#f7e6e2;color:#c3472e}
+.actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.trail{margin-top:12px;border-top:1px dashed #d5ddda;padding-top:10px;font-size:12px;color:#52605a;display:grid;gap:4px}
+.trail .row{display:flex;gap:8px;flex-wrap:wrap}
+.trail .kind{font-weight:700;color:#26312c;min-width:96px}
+.muted{color:#7c8883;font-size:12px}
+#operatorbox{display:flex;align-items:center;gap:8px;font-size:13px;color:#c7d1cd}
+#operatorbox input{background:#1d2623;border:1px solid #33403b;color:#f7fbf9;border-radius:4px;padding:6px 9px;font-size:13px;width:150px}
+</style>
+</head>
+<body data-endpoint="/api/approvals">
+<header>
+  <strong>OnAirMux</strong>
+  <nav>
+    <a href="/operations.html">节目</a><a href="/equipment.html">设备</a>
+    <a href="/interlocks.html">联锁</a><a href="/incidents.html">事件</a>
+    <a href="/approvals.html">双人审批</a>
+  </nav>
+  <div id="operatorbox">当前操作人 <input id="operator" placeholder="工号 / 姓名"></div>
+</header>
+<main>
+  <section>
+    <p class="eyebrow">TWO-PERSON CONTROL</p>
+    <h1>关键动作双人审批</h1>
+    <p id="stamp">正在连接播控服务</p>
+    <p class="muted">发起人提交明确的事件、动作与预期代次；另一位操作人确认后才执行。参数或现场代次变化会使旧批准失效，拒绝、超时与执行结果全部留痕。</p>
+  </section>
+
+  <form class="formbar" id="proposeForm">
+    <label>关键动作
+      <select id="action">
+        <option value="stop-program">停止节目 stop-program</option>
+        <option value="hold-event">挂起事件 hold-event</option>
+        <option value="mark-failed-over">标记已切备路 mark-failed-over</option>
+        <option value="schedule-failover">调度备路切换 schedule-failover</option>
+        <option value="cancel-failover">取消备路切换 cancel-failover</option>
+        <option value="audio-failover">音频切备路 audio-failover</option>
+      </select>
+    </label>
+    <label>目标事件
+      <select id="event"></select>
+    </label>
+    <label>批准有效时长（毫秒）
+      <input id="ttl" type="number" min="1000" step="1000" value="120000">
+    </label>
+    <button class="primary" type="submit">发起批准</button>
+  </form>
+
+  <div id="content" class="grid"></div>
+</main>
+<script>
+const operatorInput=document.getElementById("operator");
+operatorInput.value=localStorage.getItem("onairmux.operator")||"";
+operatorInput.addEventListener("change",()=>localStorage.setItem("onairmux.operator",operatorInput.value.trim()));
+
+const stamp=document.getElementById("stamp");
+const content=document.getElementById("content");
+const eventSelect=document.getElementById("event");
+let operations=[];
+
+function esc(value){return String(value??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function label(value){return String(value).replaceAll("_"," ")}
+
+async function loadOperations(){
+  const response=await fetch("/api/operations",{headers:{Accept:"application/json"}});
+  const payload=await response.json();
+  operations=payload.operations||[];
+  const current=eventSelect.value;
+  eventSelect.innerHTML=operations.map(op=>
+    `<option value="${op.event_id}">${esc(op.name)} · ${op.event_id.slice(0,8)} · 代次${op.command_epoch}</option>`).join("");
+  if(current)eventSelect.value=current;
+}
+
+function currentOperation(id){return operations.find(op=>op.event_id===id)}
+
+document.getElementById("proposeForm").addEventListener("submit",async(eventNode=>{
+  eventNode.preventDefault();
+  const operator=operatorInput.value.trim();
+  const eventID=eventSelect.value;
+  const op=currentOperation(eventID);
+  if(!operator){alert("请先在右上角填写当前操作人");return}
+  if(!op){alert("请选择目标事件");return}
+  const body={
+    action:document.getElementById("action").value,
+    event_id:eventID,
+    initiator:operator,
+    ttl_millis:Number(document.getElementById("ttl").value),
+    expected_generations:{
+      program_revision:op.program_revision,
+      source_generation:op.source_generation,
+      command_epoch:op.command_epoch
+    }
+  };
+  const response=await fetch("/api/approvals",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const payload=await response.json();
+  if(!response.ok){alert(payload.error||"发起失败");return}
+  refresh();
+});
+
+async function decide(ticketID,approve){
+  const operator=operatorInput.value.trim();
+  if(!operator){alert("请先在右上角填写当前操作人");return}
+  let reason="";
+  if(!approve){reason=prompt("拒绝理由（可留空）")||""}
+  const response=await fetch(`/api/approvals/${ticketID}/decision`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({approver:operator,approve,reason})
+  });
+  const payload=await response.json();
+  if(!response.ok){alert((payload.error||"决策失败"))}
+  refresh();
+}
+
+function ticketCard(ticket){
+  const expected=ticket.expected_generations||{};
+  const rows=[
+    ["事件",ticket.event_id],
+    ["动作",label(ticket.action)],
+    ["发起人",ticket.initiator],
+    ["批准人",ticket.approver||"-"],
+    ["预期节目代次",expected.program_revision?expected.program_revision.slice(0,8):"-"],
+    ["预期信源代次",expected.source_generation],
+    ["预期命令代次",expected.command_epoch],
+    ["提案时刻",new Date(ticket.proposed_at).toLocaleString()],
+    ["到期时刻",new Date(ticket.expires_at).toLocaleString()]
+  ];
+  if(ticket.execution_error)rows.push(["执行错误",ticket.execution_error]);
+  const trail=(ticket.trail||[]).map(entry=>{
+    const detail=entry.detail?` · ${entry.detail.field}: 期望 ${entry.detail.expected} / 实际 ${entry.detail.actual}`:"";
+    const reason=entry.reason?` · ${entry.reason}`:"";
+    return `<div class="row"><span class="kind">${esc(label(entry.kind))}</span><span>${esc(entry.actor)} · ${new Date(entry.at).toLocaleTimeString()}${esc(reason)}${esc(detail)}</span></div>`;
+  }).join("");
+  const operator=operatorInput.value.trim();
+  const isInitiator=operator&&operator===ticket.initiator;
+  const buttons=ticket.status==="pending"?`
+    <div class="actions">
+      <button class="primary" ${isInitiator?"disabled":""} onclick="decide('${ticket.id}',true)">批准并执行</button>
+      <button class="danger" ${isInitiator?"disabled":""} onclick="decide('${ticket.id}',false)">拒绝</button>
+      ${isInitiator?`<span class="muted">发起人不能批准自己的工单</span>`:""}
+    </div>`:"";
+  return `<article class="item">
+    <h2>${label(ticket.action)} <span class="badge ${ticket.status}">${label(ticket.status)}</span></h2>
+    <dl>${rows.map(([key,value])=>`<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join("")}</dl>
+    ${buttons}
+    <div class="trail"><strong class="muted">审计轨迹</strong>${trail}</div>
+  </article>`;
+}
+
+async function refresh(){
+  try{
+    const response=await fetch("/api/approvals",{headers:{Accept:"application/json"}});
+    const payload=await response.json();
+    const list=payload.approvals||[];
+    content.innerHTML=list.length?list.map(ticketCard).join(""):`<p class="empty">当前没有批准工单</p>`;
+    stamp.textContent=`状态 ${response.status} · ${new Date().toLocaleTimeString()}`;
+  }catch(error){
+    content.innerHTML=`<p class="empty">服务连接失败 ${error.message}</p>`;
+    stamp.textContent="连接已中断";
+  }
+}
+
+operatorInput.addEventListener("change",refresh);
+loadOperations().then(refresh);
+setInterval(()=>{loadOperations();refresh()},5000);
+window.decide=decide;
+</script>
+</body>
+</html>
