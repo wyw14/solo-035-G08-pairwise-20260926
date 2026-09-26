@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OnAirMux 双人批准</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header><strong>OnAirMux</strong><nav><a href="/operations.html">节目</a><a href="/equipment.html">设备</a><a href="/interlocks.html">联锁</a><a href="/incidents.html">事件</a><a href="/approvals.html">双人批准</a></nav></header>
+<main>
+<section>
+<p class="eyebrow">DUAL CONTROL</p>
+<h1>关键动作双人批准</h1>
+<p id="stamp">正在连接播控服务</p>
+<form id="submit-form" class="panel">
+<div class="form-row">
+<label>节目
+<select name="event_id" required></select>
+</label>
+<label>动作
+<select name="action" required>
+<option value="stop-program">停止节目</option>
+<option value="audio-failover">音频切备路</option>
+<option value="schedule-failover">定时触发备路</option>
+<option value="hold-event">挂起节目</option>
+<option value="mark-failed-over">标记已切备</option>
+</select>
+</label>
+<label>发起人<input name="initiator" required maxlength="64" placeholder="工号或姓名"></label>
+<label data-when="schedule-failover">延迟(毫秒)<input name="delay_millis" type="number" min="0" step="100" value="0"></label>
+<label>有效时长(秒)<input name="ttl_seconds" type="number" min="5" max="1800" value="120"></label>
+</div>
+<button type="submit">提交批准请求</button>
+<span id="submit-msg" class="form-msg"></span>
+</form>
+</section>
+<h2>待处理与历史</h2>
+<div id="content" class="grid"></div>
+</main>
+<script src="/approvals.js"></script>
+</body>
+</html>

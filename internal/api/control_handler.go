@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/wyw14/solo-035/internal/service"
@@ -18,6 +19,11 @@ func (server *Server) control(writer http.ResponseWriter, request *http.Request)
 	}
 	result, err := server.runtime.ExecuteControl(request.Context(), input)
 	if err != nil {
+		var protected service.ProtectedActionError
+		if errors.As(err, &protected) {
+			writeError(writer, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(writer, http.StatusConflict, err.Error())
 		return
 	}

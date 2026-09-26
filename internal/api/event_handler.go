@@ -38,6 +38,6 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 	json.NewEncoder(writer).Encode(value)
 }
 
-func writeError(writer http.ResponseWriter, status int, message string) {
+func writeError(writer http.ResponseWriter, status int, message any) {
 	writeJSON(writer, status, map[string]any{"error": message, "status": status})
 }

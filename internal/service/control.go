@@ -27,7 +27,27 @@ type ControlResult struct {
 	Value  any    `json:"value,omitempty"`
 }
 
+// ErrProtectedAction is returned when a dual-control action is sent straight to
+// the control endpoint instead of the approval workflow.
+type ProtectedActionError struct {
+	Action string
+}
+
+func (err ProtectedActionError) Error() string {
+	return fmt.Sprintf("action %q requires dual-control approval: submit an approval request and have a different operator confirm it", err.Action)
+}
+
+// ExecuteControl runs actions that do not require dual-control. Protected
+// actions (stopping a program, audio or scheduled failover, phase changes) are
+// refused here and can only run through SubmitApproval/DecideApproval.
 func (runtime *Runtime) ExecuteControl(ctx context.Context, request ControlRequest) (ControlResult, error) {
+	if RequiresApproval(request.Action) {
+		return ControlResult{Action: request.Action, Status: "approval-required"}, ProtectedActionError{Action: request.Action}
+	}
+	return runtime.executeControl(ctx, request)
+}
+
+func (runtime *Runtime) executeControl(ctx context.Context, request ControlRequest) (ControlResult, error) {
 	result := ControlResult{Action: request.Action, Status: "accepted"}
 	eventID := model.EventID(request.EventID)
 	sourceID := model.SourceID(request.SourceID)

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/wyw14/solo-035/internal/approval"
 	"github.com/wyw14/solo-035/internal/audio"
 	"github.com/wyw14/solo-035/internal/backup"
 	"github.com/wyw14/solo-035/internal/caption"
@@ -49,6 +50,8 @@ type Runtime struct {
 	PlayoutRecovery *playout.Recovery
 	BackupState     *backup.State
 	Backup          *backup.Coordinator
+	ApprovalStore   *approval.Store
+	Approvals       *approval.Registry
 }
 
 func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) {
@@ -56,6 +59,10 @@ func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) 
 		clock = time.Now
 	}
 	store, err := journal.NewStore(filepath.Join(dataDirectory, "journal"))
+	if err != nil {
+		return nil, err
+	}
+	approvalStore, err := approval.NewStore(filepath.Join(dataDirectory, "approvals"))
 	if err != nil {
 		return nil, err
 	}
@@ -100,5 +107,20 @@ func NewRuntime(dataDirectory string, clock func() time.Time) (*Runtime, error) 
 	if runtime.Backup == nil {
 		return nil, fmt.Errorf("backup coordinator was not constructed")
 	}
+	runtime.ApprovalStore = approvalStore
+	runtime.Approvals = approval.NewRegistry(approvalStore, clock)
+	if err := runtime.recoverApprovals(); err != nil {
+		return nil, err
+	}
 	return runtime, nil
+}
+
+// recoverApprovals replays the durable approval log. Pending requests keep
+// waiting; one that was confirmed but never executed is interrupted.
+func (runtime *Runtime) recoverApprovals() error {
+	entries, err := runtime.ApprovalStore.ReadAll()
+	if err != nil {
+		return fmt.Errorf("read approval log: %w", err)
+	}
+	return runtime.Approvals.Recover(entries)
 }
